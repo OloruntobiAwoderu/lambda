@@ -5,26 +5,24 @@ import com.jnape.palatable.traitor.annotations.TestTraits;
 import com.jnape.palatable.traitor.runners.Traits;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import testsupport.EquatableM;
 import testsupport.traits.ApplicativeLaws;
 import testsupport.traits.FunctorLaws;
 import testsupport.traits.MonadLaws;
+import testsupport.traits.MonadRecLaws;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.jnape.palatable.lambda.functions.builtin.fn3.Times.times;
 import static com.jnape.palatable.lambda.functor.builtin.Lazy.lazy;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 import static testsupport.Constants.STACK_EXPLODING_NUMBER;
 
 @RunWith(Traits.class)
 public class LazyTest {
 
-    @TestTraits({FunctorLaws.class, ApplicativeLaws.class, MonadLaws.class})
-    public EquatableM<Lazy<?>, Integer> testSubject() {
-        return new EquatableM<>(lazy(0), Lazy::value);
+    @TestTraits({FunctorLaws.class, ApplicativeLaws.class, MonadLaws.class, MonadRecLaws.class})
+    public Lazy<Integer> testSubject() {
+        return lazy(0);
     }
 
     @Test

@@ -3,12 +3,14 @@ package com.jnape.palatable.lambda.adt;
 import com.jnape.palatable.lambda.adt.coproduct.CoProduct2;
 import com.jnape.palatable.lambda.functions.Fn0;
 import com.jnape.palatable.lambda.functions.Fn1;
+import com.jnape.palatable.lambda.functions.recursion.RecursiveResult;
 import com.jnape.palatable.lambda.functions.specialized.SideEffect;
 import com.jnape.palatable.lambda.functor.Applicative;
 import com.jnape.palatable.lambda.functor.builtin.Lazy;
 import com.jnape.palatable.lambda.io.IO;
 import com.jnape.palatable.lambda.monad.Monad;
 import com.jnape.palatable.lambda.monad.MonadError;
+import com.jnape.palatable.lambda.monad.MonadRec;
 import com.jnape.palatable.lambda.traversable.Traversable;
 
 import java.util.Objects;
@@ -18,6 +20,8 @@ import static com.jnape.palatable.lambda.adt.Unit.UNIT;
 import static com.jnape.palatable.lambda.functions.builtin.fn1.Constantly.constantly;
 import static com.jnape.palatable.lambda.functions.builtin.fn1.Id.id;
 import static com.jnape.palatable.lambda.functions.builtin.fn1.Upcast.upcast;
+import static com.jnape.palatable.lambda.functions.recursion.RecursiveResult.terminate;
+import static com.jnape.palatable.lambda.functions.recursion.Trampoline.trampoline;
 import static com.jnape.palatable.lambda.functor.builtin.Lazy.lazy;
 import static com.jnape.palatable.lambda.internal.Runtime.throwChecked;
 
@@ -29,9 +33,10 @@ import static com.jnape.palatable.lambda.internal.Runtime.throwChecked;
  * @see Either
  */
 public abstract class Try<A> implements
-        MonadError<Throwable, A, Try<?>>,
-        Traversable<A, Try<?>>,
-        CoProduct2<Throwable, A, Try<A>> {
+    MonadError<Throwable, A, Try<?>>,
+    MonadRec<A, Try<?>>,
+    Traversable<A, Try<?>>,
+    CoProduct2<Throwable, A, Try<A>> {
 
     private Try() {
     }
@@ -77,11 +82,11 @@ public abstract class Try<A> implements
      */
     public final Try<A> ensuring(SideEffect sideEffect) {
         return match(t -> trying(sideEffect)
-                             .<Try<A>>fmap(constantly(failure(t)))
-                             .recover(t2 -> {
-                                 t.addSuppressed(t2);
-                                 return failure(t);
-                             }),
+                         .<Try<A>>fmap(constantly(failure(t)))
+                         .recover(t2 -> {
+                             t.addSuppressed(t2);
+                             return failure(t);
+                         }),
                      a -> trying(sideEffect).fmap(constantly(a)));
     }
 
@@ -182,6 +187,14 @@ public abstract class Try<A> implements
         return match(t -> recoveryFn.apply(t).coerce(), Try::success);
     }
 
+    @Override
+    public <B> Try<B> trampolineM(Fn1<? super A, ? extends MonadRec<RecursiveResult<A, B>, Try<?>>> fn) {
+        return flatMap(trampoline(a -> fn.apply(a).<Try<RecursiveResult<A, B>>>coerce()
+            .match(t -> terminate(failure(t)),
+                   aOrB -> aOrB.match(RecursiveResult::recurse,
+                                      b -> terminate(success(b))))));
+    }
+
     /**
      * {@inheritDoc}
      */
@@ -245,8 +258,8 @@ public abstract class Try<A> implements
     @Override
     @SuppressWarnings("unchecked")
     public <B, App extends Applicative<?, App>, TravB extends Traversable<B, Try<?>>,
-            AppTrav extends Applicative<TravB, App>> AppTrav traverse(Fn1<? super A, ? extends Applicative<B, App>> fn,
-                                                                      Fn1<? super TravB, ? extends AppTrav> pure) {
+        AppTrav extends Applicative<TravB, App>> AppTrav traverse(Fn1<? super A, ? extends Applicative<B, App>> fn,
+                                                                  Fn1<? super TravB, ? extends AppTrav> pure) {
         return match(t -> pure.apply((TravB) failure(t)),
                      a -> fn.apply(a).fmap(Try::success).<TravB>fmap(Applicative::coerce).coerce());
     }
@@ -330,8 +343,8 @@ public abstract class Try<A> implements
      */
     @SuppressWarnings("try")
     public static <A extends AutoCloseable, B> Try<B> withResources(
-            Fn0<? extends A> fn0,
-            Fn1<? super A, ? extends Try<? extends B>> fn) {
+        Fn0<? extends A> fn0,
+        Fn1<? super A, ? extends Try<? extends B>> fn) {
         return trying(() -> {
             try (A resource = fn0.apply()) {
                 return fn.apply(resource).<B>fmap(upcast());
@@ -352,9 +365,9 @@ public abstract class Try<A> implements
      * @return a {@link Try} representing the result of the function's application to the dependent resource
      */
     public static <A extends AutoCloseable, B extends AutoCloseable, C> Try<C> withResources(
-            Fn0<? extends A> fn0,
-            Fn1<? super A, ? extends B> bFn,
-            Fn1<? super B, ? extends Try<? extends C>> fn) {
+        Fn0<? extends A> fn0,
+        Fn1<? super A, ? extends B> bFn,
+        Fn1<? super B, ? extends Try<? extends C>> fn) {
         return withResources(fn0, a -> withResources(() -> bFn.apply(a), fn::apply));
     }
 
@@ -374,10 +387,10 @@ public abstract class Try<A> implements
      * @return a {@link Try} representing the result of the function's application to the final dependent resource
      */
     public static <A extends AutoCloseable, B extends AutoCloseable, C extends AutoCloseable, D> Try<D> withResources(
-            Fn0<? extends A> fn0,
-            Fn1<? super A, ? extends B> bFn,
-            Fn1<? super B, ? extends C> cFn,
-            Fn1<? super C, ? extends Try<? extends D>> fn) {
+        Fn0<? extends A> fn0,
+        Fn1<? super A, ? extends B> bFn,
+        Fn1<? super B, ? extends C> cFn,
+        Fn1<? super C, ? extends Try<? extends D>> fn) {
         return withResources(fn0, bFn, b -> withResources(() -> cFn.apply(b), fn::apply));
     }
 
@@ -411,8 +424,8 @@ public abstract class Try<A> implements
         @Override
         public String toString() {
             return "Failure{" +
-                    "t=" + t +
-                    '}';
+                "t=" + t +
+                '}';
         }
     }
 
@@ -446,8 +459,8 @@ public abstract class Try<A> implements
         @Override
         public String toString() {
             return "Success{" +
-                    "a=" + a +
-                    '}';
+                "a=" + a +
+                '}';
         }
     }
 }

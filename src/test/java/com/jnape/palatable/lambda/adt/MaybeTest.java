@@ -7,10 +7,7 @@ import com.jnape.palatable.traitor.framework.Subjects;
 import com.jnape.palatable.traitor.runners.Traits;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import testsupport.traits.ApplicativeLaws;
-import testsupport.traits.FunctorLaws;
-import testsupport.traits.MonadLaws;
-import testsupport.traits.TraversableLaws;
+import testsupport.traits.*;
 
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -33,7 +30,7 @@ import static testsupport.assertion.MonadErrorAssert.assertLaws;
 @RunWith(Traits.class)
 public class MaybeTest {
 
-    @TestTraits({FunctorLaws.class, ApplicativeLaws.class, TraversableLaws.class, MonadLaws.class})
+    @TestTraits({FunctorLaws.class, ApplicativeLaws.class, TraversableLaws.class, MonadLaws.class, MonadRecLaws.class})
     public Subjects<Maybe<Integer>> testSubject() {
         return subjects(Maybe.nothing(), just(1));
     }

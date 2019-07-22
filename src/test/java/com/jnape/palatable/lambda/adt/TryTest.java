@@ -7,10 +7,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
-import testsupport.traits.ApplicativeLaws;
-import testsupport.traits.FunctorLaws;
-import testsupport.traits.MonadLaws;
-import testsupport.traits.TraversableLaws;
+import testsupport.traits.*;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -45,7 +42,7 @@ public class TryTest {
 
     @Rule public ExpectedException thrown = ExpectedException.none();
 
-    @TestTraits({FunctorLaws.class, ApplicativeLaws.class, MonadLaws.class, TraversableLaws.class})
+    @TestTraits({FunctorLaws.class, ApplicativeLaws.class, MonadLaws.class, TraversableLaws.class, MonadRecLaws.class})
     public Subjects<Try<Integer>> testSubject() {
         return subjects(failure(new IllegalStateException()), success(1));
     }
@@ -173,7 +170,8 @@ public class TryTest {
     @Test
     public void withResourcesCleansUpAutoCloseableInSuccessCase() {
         AtomicBoolean closed = new AtomicBoolean(false);
-        assertEquals(success(1), Try.withResources(() -> () -> closed.set(true), resource -> success(1)));
+        assertEquals(success(1), Try.withResources(() -> (AutoCloseable) () -> closed.set(true),
+                                                   resource -> success(1)));
         assertTrue(closed.get());
     }
 
@@ -181,7 +179,7 @@ public class TryTest {
     public void withResourcesCleansUpAutoCloseableInFailureCase() {
         AtomicBoolean    closed    = new AtomicBoolean(false);
         RuntimeException exception = new RuntimeException();
-        assertEquals(Try.failure(exception), Try.withResources(() -> () -> closed.set(true),
+        assertEquals(Try.failure(exception), Try.withResources(() -> (AutoCloseable) () -> closed.set(true),
                                                                resource -> { throw exception; }));
         assertTrue(closed.get());
     }
@@ -195,7 +193,7 @@ public class TryTest {
     @Test
     public void withResourcesExposesResourceCloseFailure() {
         IOException ioException = new IOException();
-        assertEquals(Try.failure(ioException), Try.withResources(() -> () -> { throw ioException; },
+        assertEquals(Try.failure(ioException), Try.withResources(() -> (AutoCloseable) () -> { throw ioException; },
                                                                  resource -> success(1)));
     }
 
@@ -203,7 +201,7 @@ public class TryTest {
     public void withResourcesPreservesSuppressedExceptionThrownDuringClose() {
         RuntimeException rootException     = new RuntimeException();
         IOException      nestedIOException = new IOException();
-        Try<Throwable> failure = Try.withResources(() -> () -> { throw nestedIOException; },
+        Try<Throwable> failure = Try.withResources(() -> (AutoCloseable) () -> { throw nestedIOException; },
                                                    resource -> { throw rootException; });
         Throwable thrown = failure.recover(id());
 

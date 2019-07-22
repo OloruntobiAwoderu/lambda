@@ -8,12 +8,14 @@ import com.jnape.palatable.lambda.adt.hlist.Tuple2;
 import com.jnape.palatable.lambda.functions.Fn0;
 import com.jnape.palatable.lambda.functions.Fn1;
 import com.jnape.palatable.lambda.functions.builtin.fn2.Peek;
+import com.jnape.palatable.lambda.functions.recursion.RecursiveResult;
 import com.jnape.palatable.lambda.functor.Applicative;
 import com.jnape.palatable.lambda.functor.Functor;
 import com.jnape.palatable.lambda.functor.builtin.Lazy;
 import com.jnape.palatable.lambda.io.IO;
 import com.jnape.palatable.lambda.monad.Monad;
 import com.jnape.palatable.lambda.monad.MonadError;
+import com.jnape.palatable.lambda.monad.MonadRec;
 import com.jnape.palatable.lambda.traversable.Traversable;
 
 import java.util.Objects;
@@ -24,6 +26,8 @@ import static com.jnape.palatable.lambda.adt.Unit.UNIT;
 import static com.jnape.palatable.lambda.functions.Fn0.fn0;
 import static com.jnape.palatable.lambda.functions.builtin.fn1.Constantly.constantly;
 import static com.jnape.palatable.lambda.functions.builtin.fn1.Id.id;
+import static com.jnape.palatable.lambda.functions.recursion.RecursiveResult.terminate;
+import static com.jnape.palatable.lambda.functions.recursion.Trampoline.trampoline;
 import static com.jnape.palatable.lambda.functor.builtin.Lazy.lazy;
 
 /**
@@ -34,9 +38,10 @@ import static com.jnape.palatable.lambda.functor.builtin.Lazy.lazy;
  * @see Optional
  */
 public abstract class Maybe<A> implements
-        CoProduct2<Unit, A, Maybe<A>>,
-        MonadError<Unit, A, Maybe<?>>,
-        Traversable<A, Maybe<?>> {
+    CoProduct2<Unit, A, Maybe<A>>,
+    MonadRec<A, Maybe<?>>,
+    MonadError<Unit, A, Maybe<?>>,
+    Traversable<A, Maybe<?>> {
 
     private Maybe() {
     }
@@ -85,6 +90,16 @@ public abstract class Maybe<A> implements
      */
     public final Maybe<A> filter(Fn1<? super A, ? extends Boolean> predicate) {
         return flatMap(a -> predicate.apply(a) ? just(a) : nothing());
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public <B> Maybe<B> trampolineM(Fn1<? super A, ? extends MonadRec<RecursiveResult<A, B>, Maybe<?>>> fn) {
+        return trampoline(mAOrB -> mAOrB.match(constantly(terminate(nothing())),
+                                               aOrB -> aOrB.biMap(a -> fn.apply(a).coerce(), Maybe::just)),
+                          this.<RecursiveResult<A, B>>fmap(RecursiveResult::recurse));
     }
 
     /**
@@ -230,8 +245,8 @@ public abstract class Maybe<A> implements
     @Override
     @SuppressWarnings("unchecked")
     public final <B, App extends Applicative<?, App>, TravB extends Traversable<B, Maybe<?>>,
-            AppTrav extends Applicative<TravB, App>> AppTrav traverse(Fn1<? super A, ? extends Applicative<B, App>> fn,
-                                                                      Fn1<? super TravB, ? extends AppTrav> pure) {
+        AppTrav extends Applicative<TravB, App>> AppTrav traverse(Fn1<? super A, ? extends Applicative<B, App>> fn,
+                                                                  Fn1<? super TravB, ? extends AppTrav> pure) {
         return match(__ -> pure.apply((TravB) Maybe.<B>nothing()), a -> (AppTrav) fn.apply(a).fmap(Maybe::just));
     }
 
