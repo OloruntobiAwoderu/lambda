@@ -40,7 +40,8 @@ public final class MonadErrorAssert {
             EquatableM<M, A> equatable,
             E e,
             Fn1<? super E, ? extends MonadError<E, A, M>> recovery) {
-        EquatableM<M, A> eq = equatable.with(ma -> ma.<MonadError<E, A, M>>coerce().throwError(e).catchError(recovery));
+        EquatableM<M, A> eq = equatable.with(ma -> ma.<MonadError<E, A, M>>coerce()
+            .<A>throwError(e).catchError(recovery));
         return eq.equals(eq.swap(recovery.apply(e)))
                ? Maybe.nothing()
                : Maybe.just("ThrowCatch failed: " + equatable + ".throwError(" + e + ")" +

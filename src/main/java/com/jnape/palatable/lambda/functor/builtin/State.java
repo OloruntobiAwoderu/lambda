@@ -5,8 +5,11 @@ import com.jnape.palatable.lambda.adt.hlist.HList;
 import com.jnape.palatable.lambda.adt.hlist.Tuple2;
 import com.jnape.palatable.lambda.adt.product.Product2;
 import com.jnape.palatable.lambda.functions.Fn1;
+import com.jnape.palatable.lambda.functions.recursion.RecursiveResult;
 import com.jnape.palatable.lambda.functor.Applicative;
 import com.jnape.palatable.lambda.monad.Monad;
+import com.jnape.palatable.lambda.monad.MonadRec;
+import com.jnape.palatable.lambda.monad.transformer.MonadT;
 
 import static com.jnape.palatable.lambda.adt.Unit.UNIT;
 import static com.jnape.palatable.lambda.adt.hlist.HList.tuple;
@@ -14,6 +17,9 @@ import static com.jnape.palatable.lambda.functions.builtin.fn1.Constantly.consta
 import static com.jnape.palatable.lambda.functions.builtin.fn1.Id.id;
 import static com.jnape.palatable.lambda.functions.builtin.fn2.Both.both;
 import static com.jnape.palatable.lambda.functions.builtin.fn2.Into.into;
+import static com.jnape.palatable.lambda.functions.builtin.fn2.Tupler2.tupler;
+import static com.jnape.palatable.lambda.functions.recursion.Trampoline.trampoline;
+import static com.jnape.palatable.lambda.functor.builtin.State.Tuple2T.tuple2T;
 
 /**
  * The state {@link Monad}, useful for iteratively building up state and state-contextualized result.
@@ -24,7 +30,7 @@ import static com.jnape.palatable.lambda.functions.builtin.fn2.Into.into;
  * @param <S> the state type
  * @param <A> the result type
  */
-public final class State<S, A> implements Monad<A, State<S, ?>> {
+public final class State<S, A> implements MonadRec<A, State<S, ?>> {
 
     private final Fn1<? super S, ? extends Tuple2<A, S>> stateFn;
 
@@ -104,7 +110,7 @@ public final class State<S, A> implements Monad<A, State<S, ?>> {
      */
     @Override
     public <B> State<S, B> fmap(Fn1<? super A, ? extends B> fn) {
-        return Monad.super.<B>fmap(fn).coerce();
+        return MonadRec.super.<B>fmap(fn).coerce();
     }
 
     /**
@@ -112,7 +118,7 @@ public final class State<S, A> implements Monad<A, State<S, ?>> {
      */
     @Override
     public <B> State<S, B> zip(Applicative<Fn1<? super A, ? extends B>, State<S, ?>> appFn) {
-        return Monad.super.zip(appFn).coerce();
+        return MonadRec.super.zip(appFn).coerce();
     }
 
     /**
@@ -120,8 +126,8 @@ public final class State<S, A> implements Monad<A, State<S, ?>> {
      */
     @Override
     public <B> Lazy<State<S, B>> lazyZip(
-            Lazy<? extends Applicative<Fn1<? super A, ? extends B>, State<S, ?>>> lazyAppFn) {
-        return Monad.super.lazyZip(lazyAppFn).fmap(Monad<B, State<S, ?>>::coerce);
+        Lazy<? extends Applicative<Fn1<? super A, ? extends B>, State<S, ?>>> lazyAppFn) {
+        return MonadRec.super.lazyZip(lazyAppFn).fmap(Monad<B, State<S, ?>>::coerce);
     }
 
     /**
@@ -129,7 +135,7 @@ public final class State<S, A> implements Monad<A, State<S, ?>> {
      */
     @Override
     public <B> State<S, A> discardR(Applicative<B, State<S, ?>> appB) {
-        return Monad.super.discardR(appB).coerce();
+        return MonadRec.super.discardR(appB).coerce();
     }
 
     /**
@@ -137,8 +143,71 @@ public final class State<S, A> implements Monad<A, State<S, ?>> {
      */
     @Override
     public <B> State<S, B> discardL(Applicative<B, State<S, ?>> appB) {
-        return Monad.super.discardL(appB).coerce();
+        return MonadRec.super.discardL(appB).coerce();
     }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public <B> State<S, B> trampolineM(Fn1<? super A, ? extends MonadRec<RecursiveResult<A, B>, State<S, ?>>> fn) {
+        return state(s -> trampoline(into((a, s_) -> fn.apply(a).<State<S, RecursiveResult<A, B>>>coerce().run(s_)
+                                         .into((aOrB, s__) -> aOrB.biMap(a_ -> tuple(a_, s__), b -> tuple(b, s__)))),
+                                     run(s)));
+    }
+
+    public interface Tuple2T<M extends Monad<?, M>, _1, _2>
+        extends MonadT<M, Tuple2<_1, ?>, _2, Tuple2T<M, _1, ?>> {
+
+        @Override
+        default <_2Prime> Tuple2T<M, _1, _2Prime> flatMap(
+            Fn1<? super _2, ? extends Monad<_2Prime, Tuple2T<M, _1, ?>>> f) {
+            return tuple2T(this.<Tuple2<_1, _2>, Monad<Tuple2<_1, _2>, M>>run()
+                               .flatMap(into((_1, _2) -> f.apply(_2).<Tuple2T<M, _1, _2Prime>>coerce().run())));
+        }
+
+        @Override
+        default <_2Prime> Tuple2T<M, _1, _2Prime> pure(_2Prime _2Prime) {
+            return fmap(constantly(_2Prime));
+        }
+
+        @Override
+        default <_2Prime> Tuple2T<M, _1, _2Prime> fmap(Fn1<? super _2, ? extends _2Prime> fn) {
+            return MonadT.super.<_2Prime>fmap(fn).coerce();
+        }
+
+        @Override
+        default <_2Prime> Tuple2T<M, _1, _2Prime> zip(
+            Applicative<Fn1<? super _2, ? extends _2Prime>, Tuple2T<M, _1, ?>> appFn) {
+            return MonadT.super.zip(appFn).coerce();
+        }
+
+        @Override
+        default <_2Prime> Lazy<Tuple2T<M, _1, _2Prime>> lazyZip(Lazy<?
+            extends Applicative<Fn1<? super _2, ? extends _2Prime>, Tuple2T<M, _1, ?>>> lazyAppFn) {
+            return MonadT.super.lazyZip(lazyAppFn).fmap(x -> x.coerce());
+        }
+
+        @Override
+        default <_2Prime> Tuple2T<M, _1, _2Prime> discardL(Applicative<_2Prime, Tuple2T<M, _1, ?>> appB) {
+            return MonadT.super.discardL(appB).coerce();
+        }
+
+        @Override
+        default <_2Prime> Tuple2T<M, _1, _2> discardR(Applicative<_2Prime, Tuple2T<M, _1, ?>> appB) {
+            return MonadT.super.discardR(appB).coerce();
+        }
+
+        static <M extends Monad<?, M>, _1, _2> Tuple2T<M, _1, _2> tuple2T(Monad<Tuple2<_1, _2>, M> mt) {
+            return new Tuple2T<M, _1, _2>() {
+                @Override
+                public <GA extends Monad<_2, Tuple2<_1, ?>>, FGA extends Monad<GA, M>> FGA run() {
+                    return mt.<GA>fmap(Monad::coerce).coerce();
+                }
+            };
+        }
+    }
+
 
     /**
      * Create a {@link State} that simply returns back the initial state as both the result and the final state

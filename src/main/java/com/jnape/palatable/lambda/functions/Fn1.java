@@ -3,17 +3,22 @@ package com.jnape.palatable.lambda.functions;
 import com.jnape.palatable.lambda.adt.Either;
 import com.jnape.palatable.lambda.adt.choice.Choice2;
 import com.jnape.palatable.lambda.adt.hlist.Tuple2;
+import com.jnape.palatable.lambda.functions.recursion.RecursiveResult;
 import com.jnape.palatable.lambda.functor.Applicative;
 import com.jnape.palatable.lambda.functor.Cartesian;
 import com.jnape.palatable.lambda.functor.Cocartesian;
 import com.jnape.palatable.lambda.functor.builtin.Lazy;
 import com.jnape.palatable.lambda.internal.Runtime;
 import com.jnape.palatable.lambda.monad.Monad;
+import com.jnape.palatable.lambda.monad.MonadRec;
 
 import java.util.function.Function;
 
 import static com.jnape.palatable.lambda.functions.Fn2.curried;
 import static com.jnape.palatable.lambda.functions.builtin.fn1.Constantly.constantly;
+import static com.jnape.palatable.lambda.functions.recursion.RecursiveResult.recurse;
+import static com.jnape.palatable.lambda.functions.recursion.RecursiveResult.terminate;
+import static com.jnape.palatable.lambda.functions.recursion.Trampoline.trampoline;
 
 /**
  * A function taking a single argument. This is the core function type that all other function types extend and
@@ -24,9 +29,9 @@ import static com.jnape.palatable.lambda.functions.builtin.fn1.Constantly.consta
  */
 @FunctionalInterface
 public interface Fn1<A, B> extends
-        Monad<B, Fn1<A, ?>>,
-        Cartesian<A, B, Fn1<?, ?>>,
-        Cocartesian<A, B, Fn1<?, ?>> {
+    MonadRec<B, Fn1<A, ?>>,
+    Cartesian<A, B, Fn1<?, ?>>,
+    Cocartesian<A, B, Fn1<?, ?>> {
 
     /**
      * Invoke this function explosively with the given argument.
@@ -90,7 +95,15 @@ public interface Fn1<A, B> extends
     }
 
     /**
-     * Also left-to-right composition (<a href="http://jnape.com/the-perils-of-implementing-functor-in-java/">sadly</a>).
+     * {@inheritDoc}
+     */
+    @Override
+    default <C> Fn1<A, C> trampolineM(Fn1<? super B, ? extends MonadRec<RecursiveResult<B, C>, Fn1<A, ?>>> fn) {
+        return a -> trampoline(b -> fn.apply(b).<Fn1<A, RecursiveResult<B, C>>>coerce().apply(a), apply(a));
+    }
+
+    /**
+     * Left-to-right composition.
      *
      * @param <C> the return type of the next function to invoke
      * @param f   the function to invoke with this function's return value
@@ -114,7 +127,7 @@ public interface Fn1<A, B> extends
      */
     @Override
     default <C> Fn1<A, C> zip(Applicative<Fn1<? super B, ? extends C>, Fn1<A, ?>> appFn) {
-        return Monad.super.zip(appFn).coerce();
+        return MonadRec.super.zip(appFn).coerce();
     }
 
     /**
@@ -130,7 +143,7 @@ public interface Fn1<A, B> extends
      */
     @Override
     default <C> Lazy<Fn1<A, C>> lazyZip(Lazy<? extends Applicative<Fn1<? super B, ? extends C>, Fn1<A, ?>>> lazyAppFn) {
-        return Monad.super.lazyZip(lazyAppFn).fmap(Monad<C, Fn1<A, ?>>::coerce);
+        return MonadRec.super.lazyZip(lazyAppFn).fmap(Monad<C, Fn1<A, ?>>::coerce);
     }
 
     /**
@@ -138,7 +151,7 @@ public interface Fn1<A, B> extends
      */
     @Override
     default <C> Fn1<A, C> discardL(Applicative<C, Fn1<A, ?>> appB) {
-        return Monad.super.discardL(appB).coerce();
+        return MonadRec.super.discardL(appB).coerce();
     }
 
     /**
@@ -146,7 +159,7 @@ public interface Fn1<A, B> extends
      */
     @Override
     default <C> Fn1<A, B> discardR(Applicative<C, Fn1<A, ?>> appB) {
-        return Monad.super.discardR(appB).coerce();
+        return MonadRec.super.discardR(appB).coerce();
     }
 
     /**

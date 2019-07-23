@@ -106,7 +106,7 @@ public abstract class Maybe<A> implements
      * {@inheritDoc}
      */
     @Override
-    public Maybe<A> throwError(Unit unit) {
+    public <B> Maybe<B> throwError(Unit unit) {
         return nothing();
     }
 

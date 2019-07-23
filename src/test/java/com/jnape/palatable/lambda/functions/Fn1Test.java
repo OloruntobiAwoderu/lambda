@@ -30,6 +30,11 @@ public class Fn1Test {
     }
 
     @Test
+    public void trampolineM() {
+
+    }
+
+    @Test
     public void profunctorProperties() {
         Fn1<Integer, Integer> add2 = integer -> integer + 2;
 

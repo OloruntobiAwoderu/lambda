@@ -10,7 +10,6 @@ import com.jnape.palatable.lambda.functions.builtin.fn2.LazyRec;
 import com.jnape.palatable.lambda.functions.recursion.RecursiveResult;
 import com.jnape.palatable.lambda.functions.specialized.SideEffect;
 import com.jnape.palatable.lambda.functor.Applicative;
-import com.jnape.palatable.lambda.functor.Functor;
 import com.jnape.palatable.lambda.functor.builtin.Lazy;
 import com.jnape.palatable.lambda.monad.Monad;
 import com.jnape.palatable.lambda.monad.MonadError;
@@ -28,9 +27,6 @@ import static com.jnape.palatable.lambda.adt.choice.Choice2.b;
 import static com.jnape.palatable.lambda.functions.Fn0.fn0;
 import static com.jnape.palatable.lambda.functions.builtin.fn1.Constantly.constantly;
 import static com.jnape.palatable.lambda.functions.builtin.fn1.Downcast.downcast;
-import static com.jnape.palatable.lambda.functions.builtin.fn1.Id.id;
-import static com.jnape.palatable.lambda.functions.recursion.RecursiveResult.recurse;
-import static com.jnape.palatable.lambda.functions.recursion.RecursiveResult.terminate;
 import static com.jnape.palatable.lambda.functor.builtin.Lazy.lazy;
 import static com.jnape.palatable.lambda.monad.Monad.join;
 import static java.lang.Thread.interrupted;
@@ -102,14 +98,15 @@ public abstract class IO<A> implements MonadError<Throwable, A, IO<?>>, MonadRec
      * @param ensureIO the {@link IO} to ensure runs strictly after this {@link IO}
      * @return the combined {@link IO}
      */
-    public final IO<A> ensuring(IO<?> ensureIO) {
-        return join(fmap(a -> ensureIO.fmap(constantly(a)))
-                            .catchError(t1 -> ensureIO
-                                    .fmap(constantly(IO.<A>throwing(t1)))
-                                    .catchError(t2 -> io(io(() -> {
-                                        t1.addSuppressed(t2);
-                                        throw t1;
-                                    })))));
+    @Override
+    public final <B> IO<A> ensuring(MonadError<Throwable, B, IO<?>> ensureIO) {
+        return join(fmap(a -> ensureIO.<IO<B>>coerce().fmap(constantly(a)))
+                        .catchError(t1 -> ensureIO
+                            .fmap(constantly(IO.<A>throwing(t1)))
+                            .catchError(t2 -> io(io(() -> {
+                                t1.addSuppressed(t2);
+                                throw t1;
+                            })))));
     }
 
     /**
@@ -184,7 +181,7 @@ public abstract class IO<A> implements MonadError<Throwable, A, IO<?>>, MonadRec
      * {@inheritDoc}
      */
     @Override
-    public final IO<A> throwError(Throwable throwable) {
+    public final <B> IO<B> throwError(Throwable throwable) {
         return IO.throwing(throwable);
     }
 
@@ -197,28 +194,28 @@ public abstract class IO<A> implements MonadError<Throwable, A, IO<?>>, MonadRec
             @Override
             public A unsafePerformIO() {
                 return trying(fn0(IO.this::unsafePerformIO))
-                        .recover(t -> trying(fn0(recoveryFn.apply(t).<IO<A>>coerce()::unsafePerformIO))
-                                .fmap(Try::success)
-                                .recover(t2 -> {
-                                    t.addSuppressed(t2);
-                                    return failure(t);
-                                })
-                                .orThrow());
+                    .recover(t -> trying(fn0(recoveryFn.apply(t).<IO<A>>coerce()::unsafePerformIO))
+                        .fmap(Try::success)
+                        .recover(t2 -> {
+                            t.addSuppressed(t2);
+                            return failure(t);
+                        })
+                        .orThrow());
             }
 
             @Override
             public CompletableFuture<A> unsafePerformAsyncIO(Executor executor) {
                 return IO.this.unsafePerformAsyncIO(executor)
+                    .thenApply(CompletableFuture::completedFuture)
+                    .exceptionally(t -> recoveryFn.apply(t).<IO<A>>coerce().unsafePerformAsyncIO(executor)
                         .thenApply(CompletableFuture::completedFuture)
-                        .exceptionally(t -> recoveryFn.apply(t).<IO<A>>coerce().unsafePerformAsyncIO(executor)
-                                .thenApply(CompletableFuture::completedFuture)
-                                .exceptionally(t2 -> {
-                                    t.addSuppressed(t2);
-                                    return new CompletableFuture<A>() {{
-                                        completeExceptionally(t);
-                                    }};
-                                }).thenCompose(f -> f))
-                        .thenCompose(f -> f);
+                        .exceptionally(t2 -> {
+                            t.addSuppressed(t2);
+                            return new CompletableFuture<A>() {{
+                                completeExceptionally(t);
+                            }};
+                        }).thenCompose(f -> f))
+                    .thenCompose(f -> f);
             }
         };
     }
@@ -403,19 +400,19 @@ public abstract class IO<A> implements MonadError<Throwable, A, IO<?>>, MonadRec
         @Override
         public A unsafePerformIO() {
             Lazy<Object> lazyA = LazyRec.<IO<?>, Object>lazyRec(
-                    (f, io) -> {
-                        if (io instanceof IO.Compose<?>) {
-                            Compose<?>   compose = (Compose<?>) io;
-                            Lazy<Object> head    = f.apply(compose.source);
-                            return compose.composition
-                                    .match(zip -> head.flatMap(x -> f.apply(zip)
-                                                   .<Fn1<Object, Object>>fmap(downcast())
-                                                   .fmap(g -> g.apply(x))),
-                                           flatMap -> head.fmap(flatMap).flatMap(f));
-                        }
-                        return lazy(io::unsafePerformIO);
-                    },
-                    this);
+                (f, io) -> {
+                    if (io instanceof IO.Compose<?>) {
+                        Compose<?>   compose = (Compose<?>) io;
+                        Lazy<Object> head    = f.apply(compose.source);
+                        return compose.composition
+                            .match(zip -> head.flatMap(x -> f.apply(zip)
+                                       .<Fn1<Object, Object>>fmap(downcast())
+                                       .fmap(g -> g.apply(x))),
+                                   flatMap -> head.fmap(flatMap).flatMap(f));
+                    }
+                    return lazy(io::unsafePerformIO);
+                },
+                this);
             return downcast(lazyA.value());
         }
 
@@ -423,23 +420,23 @@ public abstract class IO<A> implements MonadError<Throwable, A, IO<?>>, MonadRec
         @SuppressWarnings("unchecked")
         public CompletableFuture<A> unsafePerformAsyncIO(Executor executor) {
             Lazy<CompletableFuture<Object>> lazyFuture = LazyRec.<IO<?>, CompletableFuture<Object>>lazyRec(
-                    (f, io) -> {
-                        if (io instanceof IO.Compose<?>) {
-                            Compose<?>                      compose = (Compose<?>) io;
-                            Lazy<CompletableFuture<Object>> head    = f.apply(compose.source);
-                            return compose.composition
-                                    .match(zip -> head.flatMap(futureX -> f.apply(zip)
-                                                   .fmap(futureF -> futureF.thenCombineAsync(
-                                                           futureX,
-                                                           (f2, x) -> ((Fn1<Object, Object>) f2).apply(x),
-                                                           executor))),
-                                           flatMap -> head.fmap(futureX -> futureX
-                                                   .thenComposeAsync(x -> f.apply(flatMap.apply(x)).value(),
-                                                                     executor)));
-                        }
-                        return lazy(() -> (CompletableFuture<Object>) io.unsafePerformAsyncIO(executor));
-                    },
-                    this);
+                (f, io) -> {
+                    if (io instanceof IO.Compose<?>) {
+                        Compose<?>                      compose = (Compose<?>) io;
+                        Lazy<CompletableFuture<Object>> head    = f.apply(compose.source);
+                        return compose.composition
+                            .match(zip -> head.flatMap(futureX -> f.apply(zip)
+                                       .fmap(futureF -> futureF.thenCombineAsync(
+                                           futureX,
+                                           (f2, x) -> ((Fn1<Object, Object>) f2).apply(x),
+                                           executor))),
+                                   flatMap -> head.fmap(futureX -> futureX
+                                       .thenComposeAsync(x -> f.apply(flatMap.apply(x)).value(),
+                                                         executor)));
+                    }
+                    return lazy(() -> (CompletableFuture<Object>) io.unsafePerformAsyncIO(executor));
+                },
+                this);
 
             return (CompletableFuture<A>) lazyFuture.value();
         }

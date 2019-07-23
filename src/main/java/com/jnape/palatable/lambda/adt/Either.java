@@ -281,7 +281,7 @@ public abstract class Either<L, R> implements
      * {@inheritDoc}
      */
     @Override
-    public Either<L, R> throwError(L l) {
+    public <R2> Either<L, R2> throwError(L l) {
         return left(l);
     }
 

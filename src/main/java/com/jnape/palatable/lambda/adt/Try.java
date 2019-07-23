@@ -175,7 +175,7 @@ public abstract class Try<A> implements
      * {@inheritDoc}
      */
     @Override
-    public Try<A> throwError(Throwable throwable) {
+    public <B> Try<B> throwError(Throwable throwable) {
         return failure(throwable);
     }
 
