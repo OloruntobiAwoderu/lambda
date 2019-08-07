@@ -242,6 +242,7 @@ public final class Pair<A, B> implements Bifunctor<A, B, Pair> {
         this.a = a;
         this.b = b;
     }
+    lol
 
     public A getA() {
         return a;
